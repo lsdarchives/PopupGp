@@ -11,7 +11,7 @@ A mobile app for discovering and hosting popup events in Gauteng. Hosts can crea
 | Mobile          | Expo 56 + Expo Router |
 | Auth & Database | Firebase Auth + Firestore |
 | Storage         | Firebase Storage |
-| Admin Web       | Vite React + Firebase Auth (Phase 3) |
+| Admin Web       | Next.js (Phase 3) |
 | Map             | react-native-maps + OpenStreetMap |
 
 ---
@@ -76,7 +76,7 @@ PopupGp/
   mobile-app/         # Expo React Native app
   firebase/           # Firestore rules and indexes
   shared/             # Shared TypeScript types
-  admin-web/          # Vite admin app (Phase 3)
+  admin-web/          # Next.js admin app (Phase 3)
   README.md
 ```
 
@@ -178,12 +178,10 @@ git push --set-upstream origin feature/phase-N-short-name
 - ✅ Firestore composite index deployed for approved-event queries
 
 ### Still pending
-- ⏳ Admin web deployment and final polish
+- ⏳ Real admin web app to approve/reject events
 - ⏳ Full payment integration for ticket purchases
 - ⏳ Uber-style interactive map discovery experience
 - ⏳ UI polish and richer event cards
-
-> Reminder for Phase 2: before moving to Phase 3, we should still add the Uber-style user experience upgrades (bottom nav, map-first browse, search bar, past events, and profile screens).
 
 ## Build Phases
 
@@ -192,7 +190,7 @@ git push --set-upstream origin feature/phase-N-short-name
 | 0 | Mobile shell + login | ✅ Done |
 | 1 | Splash, role picker, register/login, Firestore rules | ✅ Done |
 | 2 | Host event creation and management, user browse, RSVP/ticket flow | ✅ Mostly complete |
-| 3 | Admin web moderation console | 🟡 In progress |
+| 3 | Next.js admin web — approve/reject events | ⏳ Pending |
 | 4 | Uber-style map for users | ⏳ Pending |
 | 5 | RSVP, filters, profiles, images | ⏳ Pending |
 | 6 | Docs, README, demo script | ⏳ Pending |
