@@ -20,4 +20,9 @@ export interface Event {
   rsvpCount: number;
   imageUrl?: string;
   capacity?: number;
+  ticketPrice?: number;
+}
+
+export interface EventWithId extends Event {
+  id: string;
 }

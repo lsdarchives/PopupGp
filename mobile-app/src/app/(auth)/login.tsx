@@ -36,7 +36,7 @@ export default function AuthScreen() {
       const profile = await getUserProfile(cred.user.uid);
       if (!profile) return Alert.alert("Profile not found", "Please register first.");
       const route = getHomeRoute(profile.role);
-      if (route) router.replace(route as any);
+      if (route) router.replace(route);
     } catch {
       Alert.alert("Login failed", "Check your email and password");
     } finally {
@@ -57,7 +57,7 @@ export default function AuthScreen() {
         createdAt: serverTimestamp(),
       });
       const route = getHomeRoute(selectedRole);
-      if (route) router.replace(route as any);
+      if (route) router.replace(route);
     } catch {
       Alert.alert("Registration failed", "Please try again");
     } finally {
@@ -136,7 +136,7 @@ export default function AuthScreen() {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.replace("/(auth)/roles" as any)} style={styles.backLink}>
+        <TouchableOpacity onPress={() => router.replace("/(auth)/roles")} style={styles.backLink}>
           <Text style={styles.backLinkText}>← Back to role selection</Text>
         </TouchableOpacity>
 
