@@ -1,8 +1,13 @@
 import { TouchableOpacity, Text, StyleSheet, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../contexts/AuthContext";
+import { Brand } from "../constants/brand";
 
-export function LogoutButton() {
+type Props = {
+  inline?: boolean;
+};
+
+export function LogoutButton({ inline = false }: Props) {
   const { logout } = useAuth();
   const router = useRouter();
 
@@ -21,19 +26,23 @@ export function LogoutButton() {
   };
 
   return (
-    <TouchableOpacity style={styles.button} onPress={handleLogout}>
+    <TouchableOpacity style={inline ? styles.inline : styles.floating} onPress={handleLogout}>
       <Text style={styles.text}>Log out</Text>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  button: {
+  floating: {
     position: "absolute",
     top: 48,
     right: 24,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
-  text: { color: "#208AEF", fontSize: 14, fontWeight: "600" },
+  inline: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  text: { color: Brand.red, fontSize: 14, fontWeight: "600" },
 });
