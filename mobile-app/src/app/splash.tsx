@@ -26,7 +26,7 @@ export default function SplashScreen() {
           if (role === "host") {
             router.replace("/(host)/my-events");
           } else {
-            router.replace("/(user)/browse");
+            router.replace("/(user)/(tabs)/map");
           }
         } catch {
           router.replace("/(auth)/roles" as any);

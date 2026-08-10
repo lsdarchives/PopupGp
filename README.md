@@ -1,4 +1,4 @@
-# PopupGp
+﻿# PopupGp
 
 A mobile app for discovering and hosting popup events in Gauteng. Hosts can create and manage events, users can browse approved events, and admins will approve content through a future web dashboard.
 
@@ -12,7 +12,7 @@ A mobile app for discovering and hosting popup events in Gauteng. Hosts can crea
 | Auth & Database | Firebase Auth + Firestore |
 | Storage         | Firebase Storage |
 | Admin Web       | Vite React + Firebase Auth (Phase 3) |
-| Map             | react-native-maps + OpenStreetMap |
+| Map             | MapLibre + free map tiles |
 
 ---
 
@@ -86,14 +86,14 @@ PopupGp/
 
 ```
 Splash screen
-       ↓
-Role picker — User or Host
-       ↓
+       â†“
+Role picker â€” User or Host
+       â†“
 Login / Sign Up
-       ↓
-User → Browse approved events → View details → RSVP / reserve ticket
-       ↓
-Host → My events → Create / edit / cancel / delete event
+       â†“
+User â†’ Browse approved events â†’ View details â†’ RSVP / reserve ticket
+       â†“
+Host â†’ My events â†’ Create / edit / cancel / delete event
 ```
 
 ---
@@ -142,14 +142,24 @@ git checkout main
 git pull
 git checkout -b feature/phase-N-short-name
 
-# During development — commit often
+# During development â€” commit often
 git add .
 git commit -m "Description of what you built"
 
 # Push and open a PR
 git push --set-upstream origin feature/phase-N-short-name
-# Go to github.com/lsdarchives/PopupGp → open Pull Request → merge to main
+# Go to github.com/lsdarchives/PopupGp â†’ open Pull Request â†’ merge to main
 ```
+
+### Save changes to GitHub
+```bash
+git status
+git add .
+git commit -m "Describe your changes"
+git push
+```
+- If this is the first push for a new branch, use `git push -u origin <branch-name>`.
+- Then open the repo on GitHub and create a pull request.
 
 ### Branch naming
 | Phase | Branch name |
@@ -168,22 +178,28 @@ git push --set-upstream origin feature/phase-N-short-name
 ## Current Implementation Status
 
 ### Phase 2 mobile app progress
-- ✅ Host authentication flow and role-based navigation
-- ✅ Event creation form with location, category, time, capacity, and ticket fields
-- ✅ Host event list screen with status badges
-- ✅ Event detail screen with edit, cancel, and delete actions
-- ✅ User browse screen for approved events
-- ✅ User event detail screen with RSVP and ticket reservation actions
-- ✅ Firestore event status handling for `pending`, `approved`, `rejected`, and `cancelled`
-- ✅ Firestore composite index deployed for approved-event queries
+- âœ… Host authentication flow and role-based navigation
+- âœ… Event creation form with location, category, time, capacity, and ticket fields
+- âœ… Host event list screen with status badges
+- âœ… Event detail screen with edit, cancel, and delete actions
+- âœ… User browse screen for approved events
+- âœ… User event detail screen with RSVP and ticket reservation actions
+- âœ… Firestore event status handling for `pending`, `approved`, `rejected`, and `cancelled`
+- âœ… Firestore composite index deployed for approved-event queries
+
+### Phase 4 mobile app progress
+- âœ… User flow now lands on the map tab after splash/auth
+- âœ… Map uses MapLibre with OpenFreeMap Positron tiles
+- âœ… Search is focus-driven with compact filters and category chips
+- âœ… Pin tap opens a preview card with image and CTA
+- âœ… Bottom navigation icons are added
 
 ### Still pending
 - ⏳ Admin web deployment and final polish
 - ⏳ Full payment integration for ticket purchases
-- ⏳ Uber-style interactive map discovery experience
-- ⏳ UI polish and richer event cards
+- ⏳ Phase 5 RSVP, profiles, and image polish
 
-> Reminder for Phase 2: before moving to Phase 3, we should still add the Uber-style user experience upgrades (bottom nav, map-first browse, search bar, past events, and profile screens).
+> Reminder for the next phase: RSVP, profiles, images, and richer discovery can build on this user shell.
 
 ## Build Phases
 
@@ -193,7 +209,7 @@ git push --set-upstream origin feature/phase-N-short-name
 | 1 | Splash, role picker, register/login, Firestore rules | ✅ Done |
 | 2 | Host event creation and management, user browse, RSVP/ticket flow | ✅ Mostly complete |
 | 3 | Admin web moderation console | 🟡 In progress |
-| 4 | Uber-style map for users | ⏳ Pending |
+| 4 | Uber-style map for users | ✅ Done |
 | 5 | RSVP, filters, profiles, images | ⏳ Pending |
 | 6 | Docs, README, demo script | ⏳ Pending |
 
