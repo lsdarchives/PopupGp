@@ -188,11 +188,11 @@ git push
 - âœ… Firestore composite index deployed for approved-event queries
 
 ### Phase 4 mobile app progress
-- âœ… User flow now lands on the map tab after splash/auth
-- âœ… Map uses MapLibre with OpenFreeMap Positron tiles
-- âœ… Search is focus-driven with compact filters and category chips
-- âœ… Pin tap opens a preview card with image and CTA
-- âœ… Bottom navigation icons are added
+- ✅ User flow now lands on the map tab after splash/auth
+- ✅ Map uses MapLibre with OpenFreeMap Positron tiles
+- ✅ Search is focus-driven with compact filters and category chips
+- ✅ Pin tap opens a preview card with image and CTA
+- ✅ Bottom navigation icons are added
 
 ### Still pending
 - ⏳ Real admin web app to approve/reject events
