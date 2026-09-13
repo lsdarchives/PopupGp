@@ -194,10 +194,17 @@ git push
 - ✅ Pin tap opens a preview card with image and CTA
 - ✅ Bottom navigation icons are added
 
+### Phase 5 mobile app progress
+- ✅ RSVP toggling from event details
+- ✅ Paid ticket checkout wired through Stripe and Firebase Functions
+- ✅ Event search with free, paid, and category filters
+- ✅ Event images displayed in browse cards and map previews
+
 ### Still pending
-- ⏳ Real admin web app to approve/reject events
-- ⏳ Full payment integration for ticket purchases
-- ⏳ Phase 5 RSVP, profiles, and image polish
+- ⏳ Profile editing and functional settings
+- ⏳ Saved or attended events view
+- ⏳ Additional event image and card polish
+- ⏳ End-to-end RSVP and Stripe validation against deployed services
 
 ## Build Phases
 
@@ -206,9 +213,9 @@ git push
 | 0 | Mobile shell + login | ✅ Done |
 | 1 | Splash, role picker, register/login, Firestore rules | ✅ Done |
 | 2 | Host event creation and management, user browse, RSVP/ticket flow | ✅ Mostly complete |
-| 3 | Next.js admin web — approve/reject events | ⏳ Pending |
-| 4 | Uber-style map for users | ⏳ Pending |
-| 5 | RSVP, filters, profiles, images | ⏳ Pending |
+| 3 | Next.js admin web — approve/reject events | ✅ Done |
+| 4 | Uber-style map for users | ✅ Done |
+| 5 | RSVP, filters, profiles, images | 🚧 In progress |
 | 6 | Docs, README, demo script | ⏳ Pending |
 
 ---
