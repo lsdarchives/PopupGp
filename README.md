@@ -1,4 +1,4 @@
-# PopupGp
+﻿# PopupGp
 
 A mobile app for discovering and hosting popup events in Gauteng. Hosts can create and manage events, users can browse approved events, and admins will approve content through a future web dashboard.
 
@@ -86,14 +86,14 @@ PopupGp/
 
 ```
 Splash screen
-       ↓
-Role picker — User or Host
-       ↓
+       â†“
+Role picker â€” User or Host
+       â†“
 Login / Sign Up
-       ↓
-User → Browse approved events → View details → RSVP / reserve ticket
-       ↓
-Host → My events → Create / edit / cancel / delete event
+       â†“
+User â†’ Browse approved events â†’ View details â†’ RSVP / reserve ticket
+       â†“
+Host â†’ My events â†’ Create / edit / cancel / delete event
 ```
 
 ---
@@ -142,14 +142,24 @@ git checkout main
 git pull
 git checkout -b feature/phase-N-short-name
 
-# During development — commit often
+# During development â€” commit often
 git add .
 git commit -m "Description of what you built"
 
 # Push and open a PR
 git push --set-upstream origin feature/phase-N-short-name
-# Go to github.com/lsdarchives/PopupGp → open Pull Request → merge to main
+# Go to github.com/lsdarchives/PopupGp â†’ open Pull Request â†’ merge to main
 ```
+
+### Save changes to GitHub
+```bash
+git status
+git add .
+git commit -m "Describe your changes"
+git push
+```
+- If this is the first push for a new branch, use `git push -u origin <branch-name>`.
+- Then open the repo on GitHub and create a pull request.
 
 ### Branch naming
 | Phase | Branch name |
@@ -168,20 +178,33 @@ git push --set-upstream origin feature/phase-N-short-name
 ## Current Implementation Status
 
 ### Phase 2 mobile app progress
-- ✅ Host authentication flow and role-based navigation
-- ✅ Event creation form with location, category, time, capacity, and ticket fields
-- ✅ Host event list screen with status badges
-- ✅ Event detail screen with edit, cancel, and delete actions
-- ✅ User browse screen for approved events
-- ✅ User event detail screen with RSVP and ticket reservation actions
-- ✅ Firestore event status handling for `pending`, `approved`, `rejected`, and `cancelled`
-- ✅ Firestore composite index deployed for approved-event queries
+- âœ… Host authentication flow and role-based navigation
+- âœ… Event creation form with location, category, time, capacity, and ticket fields
+- âœ… Host event list screen with status badges
+- âœ… Event detail screen with edit, cancel, and delete actions
+- âœ… User browse screen for approved events
+- âœ… User event detail screen with RSVP and ticket reservation actions
+- âœ… Firestore event status handling for `pending`, `approved`, `rejected`, and `cancelled`
+- âœ… Firestore composite index deployed for approved-event queries
+
+### Phase 4 mobile app progress
+- ✅ User flow now lands on the map tab after splash/auth
+- ✅ Map uses MapLibre with OpenFreeMap Positron tiles
+- ✅ Search is focus-driven with compact filters and category chips
+- ✅ Pin tap opens a preview card with image and CTA
+- ✅ Bottom navigation icons are added
+
+### Phase 5 mobile app progress
+- ✅ RSVP toggling from event details
+- ✅ Paid ticket checkout wired through Stripe and Firebase Functions
+- ✅ Event search with free, paid, and category filters
+- ✅ Event images displayed in browse cards and map previews
 
 ### Still pending
-- ⏳ Real admin web app to approve/reject events
-- ⏳ Full payment integration for ticket purchases
-- ⏳ Uber-style interactive map discovery experience
-- ⏳ UI polish and richer event cards
+- ⏳ Profile editing and functional settings
+- ⏳ Saved or attended events view
+- ⏳ Additional event image and card polish
+- ⏳ End-to-end RSVP and Stripe validation against deployed services
 
 ## Build Phases
 
@@ -190,9 +213,9 @@ git push --set-upstream origin feature/phase-N-short-name
 | 0 | Mobile shell + login | ✅ Done |
 | 1 | Splash, role picker, register/login, Firestore rules | ✅ Done |
 | 2 | Host event creation and management, user browse, RSVP/ticket flow | ✅ Mostly complete |
-| 3 | Next.js admin web — approve/reject events | ⏳ Pending |
-| 4 | Uber-style map for users | ⏳ Pending |
-| 5 | RSVP, filters, profiles, images | ⏳ Pending |
+| 3 | Next.js admin web — approve/reject events | ✅ Done |
+| 4 | Uber-style map for users | ✅ Done |
+| 5 | RSVP, filters, profiles, images | 🚧 In progress |
 | 6 | Docs, README, demo script | ⏳ Pending |
 
 ---
