@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
   View,
   Text,
   StyleSheet,
@@ -7,16 +8,21 @@ import {
   TextInput,
   ActivityIndicator,
   ScrollView,
+  Pressable,
+  PanResponder,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Image } from "expo-image";
+import * as Location from "expo-location";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Camera, type CameraRef, Map, Marker } from "@maplibre/maplibre-react-native";
 
 import { useAuth } from "../../../contexts/AuthContext";
 import { getApprovedEvents } from "../../../services/events";
 import { Brand, Radius } from "../../../constants/brand";
 import type { EventWithId } from "../../../types";
+import { useSavedEvents } from "../../../hooks/use-saved-events";
 
 const GAUTENG_CENTER: [number, number] = [28.0473, -26.2041];
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
@@ -78,25 +84,67 @@ function CategoryChip({
 
 export default function MapScreen() {
   const router = useRouter();
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
+  const { savedEventIds, loadingSavedEvents, savingEventId, toggleSavedEvent } = useSavedEvents(user?.uid);
   const cameraRef = useRef<CameraRef>(null);
+  const [previewTranslateY] = useState(() => new Animated.Value(320));
   const [events, setEvents] = useState<EventWithId[]>([]);
   const [loading, setLoading] = useState(true);
+  const [eventLoadError, setEventLoadError] = useState<string | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [query, setQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [activeFilter, setActiveFilter] = useState<SearchFilter>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     getApprovedEvents()
       .then((items) => {
         setEvents(items);
-        setSelectedEventId(items[0]?.id ?? null);
+        setEventLoadError(null);
+      })
+      .catch((error) => {
+        setEventLoadError(error instanceof Error ? error.message : "Could not load approved events.");
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const loadUserLocation = async () => {
+      setLocationLoading(true);
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.status !== "granted") {
+          setLocationError("Allow location access to center the map near you.");
+          return;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        setUserLocation([position.coords.longitude, position.coords.latitude]);
+      } catch (error) {
+        setLocationError(error instanceof Error ? error.message : "Could not get your location.");
+      } finally {
+        setLocationLoading(false);
+      }
+    };
+
+    loadUserLocation();
+  }, []);
+
+  useEffect(() => {
+    Animated.timing(previewTranslateY, {
+      toValue: isPreviewVisible ? 0 : 320,
+      duration: 240,
+      useNativeDriver: true,
+    }).start();
+  }, [isPreviewVisible, previewTranslateY]);
 
   const filteredEvents = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -135,25 +183,12 @@ export default function MapScreen() {
     });
   }, [events, query, activeFilter, selectedCategory]);
 
-  useEffect(() => {
-    if (filteredEvents.length === 0) {
-      setSelectedEventId(null);
-      setIsPreviewVisible(false);
-      return;
-    }
-
-    setSelectedEventId((currentSelection) => {
-      const currentMatch = filteredEvents.some((event) => event.id === currentSelection);
-      return currentMatch ? currentSelection : filteredEvents[0].id;
-    });
-  }, [filteredEvents]);
-
   const selectedEvent = useMemo(() => {
-    if (!selectedEventId) {
-      return filteredEvents[0] ?? null;
-    }
-
-    return filteredEvents.find((event) => event.id === selectedEventId) ?? filteredEvents[0] ?? null;
+    return (
+      filteredEvents.find((event) => event.id === selectedEventId) ??
+      filteredEvents[0] ??
+      null
+    );
   }, [filteredEvents, selectedEventId]);
 
   useEffect(() => {
@@ -168,11 +203,97 @@ export default function MapScreen() {
       pitch: 20,
       bearing: 0,
     });
-  }, [selectedEvent?.id]);
+  }, [selectedEvent]);
 
   const openEvent = (eventId: string) => {
     router.push({ pathname: "/(user)/event/[id]", params: { id: eventId } } as any);
   };
+
+  const toggleSelectedEventSave = async () => {
+    if (!selectedEvent || !user) {
+      setSavedMessage("Sign in to save events.");
+      return;
+    }
+    setSavedMessage(null);
+    try {
+      const saved = await toggleSavedEvent(selectedEvent.id);
+      setSavedMessage(saved ? "Saved for later." : "Removed from saved events.");
+    } catch (error) {
+      setSavedMessage(error instanceof Error ? error.message : "Could not update saved events.");
+    }
+  };
+
+  const closePreview = useCallback(() => {
+    Animated.timing(previewTranslateY, {
+      toValue: 320,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => setIsPreviewVisible(false));
+  }, [previewTranslateY]);
+
+  const recenterToUser = async () => {
+    setLocationError(null);
+    if (userLocation) {
+      cameraRef.current?.flyTo({
+        center: userLocation,
+        zoom: 14,
+        duration: 650,
+        pitch: 20,
+        bearing: 0,
+      });
+      return;
+    }
+
+    setLocationLoading(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== "granted") {
+        setLocationError("Allow location access to center the map near you.");
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const nextLocation: [number, number] = [position.coords.longitude, position.coords.latitude];
+      setUserLocation(nextLocation);
+      cameraRef.current?.flyTo({
+        center: nextLocation,
+        zoom: 14,
+        duration: 650,
+        pitch: 20,
+        bearing: 0,
+      });
+    } catch (error) {
+      setLocationError(error instanceof Error ? error.message : "Could not get your location.");
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  const previewPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 8,
+        onPanResponderMove: (_, gesture) => {
+          if (gesture.dy > 0) {
+            previewTranslateY.setValue(gesture.dy);
+          }
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dy > 80 || gesture.vy > 0.8) {
+            closePreview();
+            return;
+          }
+
+          Animated.spring(previewTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        },
+      }),
+    [closePreview, previewTranslateY]
+  );
 
   const cameraCenter: [number, number] = selectedEvent
     ? [selectedEvent.location.lng, selectedEvent.location.lat]
@@ -211,11 +332,13 @@ export default function MapScreen() {
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="large" color={Brand.red} />
           </View>
-        ) : events.length === 0 ? (
+        ) : eventLoadError || events.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No approved events yet</Text>
+            <Text style={styles.emptyTitle}>
+              {eventLoadError ? "Could not load events" : "No approved events yet"}
+            </Text>
             <Text style={styles.emptyText}>
-              Once admins approve events, they will appear on this map.
+              {eventLoadError ?? "Once admins approve events, they will appear on this map."}
             </Text>
           </View>
         ) : (
@@ -252,6 +375,14 @@ export default function MapScreen() {
                   </View>
                 </Marker>
               ))}
+
+              {userLocation ? (
+                <Marker lngLat={userLocation}>
+                  <View style={styles.userDotOuter}>
+                    <View style={styles.userDotInner} />
+                  </View>
+                </Marker>
+              ) : null}
             </Map>
 
             <View style={styles.mapHeaderOverlay}>
@@ -300,17 +431,26 @@ export default function MapScreen() {
                     <FilterChip
                       label="All"
                       active={activeFilter === "all"}
-                      onPress={() => setActiveFilter("all")}
+                      onPress={() => {
+                        setActiveFilter("all");
+                        setIsPreviewVisible(false);
+                      }}
                     />
                     <FilterChip
                       label="Free"
                       active={activeFilter === "free"}
-                      onPress={() => setActiveFilter("free")}
+                      onPress={() => {
+                        setActiveFilter("free");
+                        setIsPreviewVisible(false);
+                      }}
                     />
                     <FilterChip
                       label="Paid"
                       active={activeFilter === "paid"}
-                      onPress={() => setActiveFilter("paid")}
+                      onPress={() => {
+                        setActiveFilter("paid");
+                        setIsPreviewVisible(false);
+                      }}
                     />
                   </View>
                 )}
@@ -324,14 +464,20 @@ export default function MapScreen() {
                     <CategoryChip
                       label="all"
                       active={selectedCategory === "all"}
-                      onPress={() => setSelectedCategory("all")}
+                      onPress={() => {
+                        setSelectedCategory("all");
+                        setIsPreviewVisible(false);
+                      }}
                     />
                     {categoryOptions.map((category) => (
                       <CategoryChip
                         key={category}
                         label={category}
                         active={selectedCategory === category}
-                        onPress={() => setSelectedCategory(category)}
+                        onPress={() => {
+                          setSelectedCategory(category);
+                          setIsPreviewVisible(false);
+                        }}
                       />
                     ))}
                   </ScrollView>
@@ -381,8 +527,30 @@ export default function MapScreen() {
               </View>
             </View>
 
+            <TouchableOpacity
+              style={styles.locationButton}
+              activeOpacity={0.85}
+              onPress={recenterToUser}
+              disabled={locationLoading}
+            >
+              {locationLoading ? (
+                <ActivityIndicator size="small" color={Brand.red} />
+              ) : (
+                <MaterialCommunityIcons name="crosshairs-gps" color={Brand.red} size={22} />
+              )}
+            </TouchableOpacity>
+            {locationError ? <Text style={styles.locationError}>{locationError}</Text> : null}
+
             {isPreviewVisible && selectedEvent ? (
-              <View style={styles.previewCard}>
+              <Pressable style={styles.previewScrim} onPress={closePreview} />
+            ) : null}
+
+            {isPreviewVisible && selectedEvent ? (
+              <Animated.View
+                style={[styles.previewSheet, { transform: [{ translateY: previewTranslateY }] }]}
+                {...previewPanResponder.panHandlers}
+              >
+                <View style={styles.sheetHandle} />
                 <View style={styles.previewImageWrap}>
                   {selectedEvent.imageUrl ? (
                     <Image
@@ -400,11 +568,30 @@ export default function MapScreen() {
                 <View style={styles.previewBody}>
                   <View style={styles.previewTopRow}>
                     <Text style={styles.previewBadge}>Selected event</Text>
-                    <Text style={styles.previewPrice}>
-                      {(selectedEvent.ticketPrice ?? 0) > 0
-                        ? `R${selectedEvent.ticketPrice}`
-                        : "Free"}
-                    </Text>
+                    <View style={styles.previewActions}>
+                      <Text style={styles.previewPrice}>
+                        {(selectedEvent.ticketPrice ?? 0) > 0
+                          ? `R${selectedEvent.ticketPrice}`
+                          : "Free"}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.previewSaveButton}
+                        onPress={toggleSelectedEventSave}
+                        disabled={loadingSavedEvents || savingEventId === selectedEvent.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={savedEventIds.has(selectedEvent.id) ? "Remove from saved events" : "Save event"}
+                      >
+                        {savingEventId === selectedEvent.id ? (
+                          <ActivityIndicator size="small" color={Brand.red} />
+                        ) : (
+                          <MaterialCommunityIcons
+                            name={savedEventIds.has(selectedEvent.id) ? "bookmark" : "bookmark-outline"}
+                            size={19}
+                            color={Brand.red}
+                          />
+                        )}
+                      </TouchableOpacity>
+                    </View>
                   </View>
 
                   <Text style={styles.previewTitle} numberOfLines={2}>
@@ -413,6 +600,11 @@ export default function MapScreen() {
                   <Text style={styles.previewMeta} numberOfLines={2}>
                     {selectedEventDate} · {selectedEvent.location.address}
                   </Text>
+                  {savedMessage ? (
+                    <Text style={styles.previewSavedMessage} accessibilityLiveRegion="polite" accessibilityRole="alert">
+                      {savedMessage}
+                    </Text>
+                  ) : null}
 
                   <TouchableOpacity
                     style={styles.previewButton}
@@ -424,7 +616,7 @@ export default function MapScreen() {
                     </Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+              </Animated.View>
             ) : null}
           </View>
         )}
@@ -645,14 +837,76 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: Brand.white,
   },
-  previewCard: {
+  userDotOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(47, 128, 237, 0.2)",
+    borderWidth: 2,
+    borderColor: Brand.white,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  userDotInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#2F80ED",
+  },
+  locationButton: {
     position: "absolute",
-    left: 16,
+    right: 18,
+    bottom: 112,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Brand.white,
+    borderWidth: 1,
+    borderColor: Brand.greyLight,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+    zIndex: 12,
+  },
+  locationError: {
+    position: "absolute",
     right: 16,
-    bottom: 104,
-    flexDirection: "row",
+    bottom: 76,
+    maxWidth: 220,
+    color: Brand.red,
+    backgroundColor: Brand.white,
+    borderRadius: Radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    textAlign: "right",
+  },
+  previewScrim: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: "rgba(0,0,0,0.08)",
+    zIndex: 18,
+  },
+  previewSheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "rgba(255,255,255,0.98)",
-    borderRadius: Radius.lg,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
     borderColor: Brand.greyLight,
     overflow: "hidden",
@@ -661,12 +915,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 20,
     elevation: 7,
+    zIndex: 20,
+    paddingBottom: 22,
   },
-  previewImageWrap: { width: 118, backgroundColor: Brand.bg },
+  sheetHandle: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: Brand.greyLight,
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  previewImageWrap: {
+    height: 170,
+    marginHorizontal: 16,
+    borderRadius: Radius.lg,
+    overflow: "hidden",
+    backgroundColor: Brand.bg,
+  },
   previewImage: { width: "100%", height: "100%" },
   previewPlaceholder: {
     flex: 1,
-    minHeight: 150,
     alignItems: "center",
     justifyContent: "center",
     padding: 10,
@@ -680,7 +950,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  previewBody: { flex: 1, padding: 14 },
+  previewBody: { paddingHorizontal: 18, paddingTop: 14 },
   previewTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -695,6 +965,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   previewPrice: { fontSize: 12, fontWeight: "700", color: Brand.greyMid },
+  previewActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  previewSaveButton: {
+    width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: Brand.greyLight,
+    backgroundColor: Brand.white, alignItems: "center", justifyContent: "center",
+  },
+  previewSavedMessage: { fontSize: 12, color: Brand.greyMid, marginTop: 4 },
   previewTitle: {
     fontSize: 16,
     fontWeight: "800",
@@ -705,11 +981,11 @@ const styles = StyleSheet.create({
   previewMeta: { fontSize: 13, color: Brand.greyMid, marginTop: 6, lineHeight: 18 },
   previewButton: {
     marginTop: 10,
-    alignSelf: "flex-start",
     backgroundColor: Brand.red,
     borderRadius: Radius.lg,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 14,
+    alignItems: "center",
   },
   previewButtonText: { color: Brand.white, fontSize: 13, fontWeight: "700" },
 });

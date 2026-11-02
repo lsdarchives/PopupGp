@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import type { UserProfile, UserRole } from "../types";
 
@@ -27,4 +27,8 @@ export async function createUserProfile(
     role,
     createdAt: serverTimestamp(),
   });
+}
+
+export async function updateProfileName(uid: string, displayName: string): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { displayName });
 }

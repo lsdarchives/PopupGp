@@ -1,0 +1,31 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function eventDoc(eventId) {
+      return firestore.get(/databases/(default)/documents/events/$(eventId));
+    }
+
+    match /events/{eventId}/{hostId}/{fileName} {
+      allow read: if signedIn() && (
+        request.auth.uid == hostId
+        || (eventDoc(eventId).data.status == 'approved')
+      );
+
+      allow create, update: if signedIn()
+        && request.auth.uid == hostId
+        && eventDoc(eventId).data.hostId == request.auth.uid
+        && eventDoc(eventId).data.status in ['pending', 'rejected']
+        && fileName.matches('cover\\.(jpg|png|webp)')
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+
+      // Allow the owner to clean up an image even after deleting its event document.
+      allow delete: if signedIn() && request.auth.uid == hostId;
+    }
+  }
+}

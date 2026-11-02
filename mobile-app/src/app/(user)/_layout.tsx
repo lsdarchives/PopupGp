@@ -9,6 +9,7 @@ export default function UserLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="event/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="saved-events" options={{ headerShown: false }} />
     </Stack>
   );
 }

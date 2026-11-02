@@ -23,6 +23,55 @@ service cloud.firestore {
       return isSignedIn() && userDoc().data.role == 'host';
     }
 
+    function validEventPayload() {
+      let event = request.resource.data;
+      return event.keys().hasAll([
+          'title', 'description', 'category', 'hostId', 'status', 'location',
+          'geohash', 'startAt', 'endAt', 'rsvpCount', 'capacity', 'ticketPrice'
+        ])
+        && event.title is string
+        && event.title.size() > 0
+        && event.title.size() <= 100
+        && event.description is string
+        && event.description.size() > 0
+        && event.description.size() <= 2000
+        && event.category is string
+        && event.category in ['music', 'food', 'sports', 'arts', 'markets', 'nightlife', 'other']
+        && event.location is map
+        && event.location.keys().hasAll(['lat', 'lng', 'address'])
+        && event.location.lat is number
+        && event.location.lat >= -90
+        && event.location.lat <= 90
+        && event.location.lng is number
+        && event.location.lng >= -180
+        && event.location.lng <= 180
+        && event.location.address is string
+        && event.location.address.size() > 0
+        && event.location.address.size() <= 200
+        && event.geohash is string
+        && event.startAt is timestamp
+        && event.endAt is timestamp
+        && event.endAt > event.startAt
+        && event.rsvpCount is int
+        && event.rsvpCount >= 0
+        && (event.capacity == null || (event.capacity is int && event.capacity > 0))
+        && event.ticketPrice is number
+        && event.ticketPrice >= 0
+        && (!event.keys().hasAny(['imageUrl']) || event.imageUrl is string)
+        && (!event.keys().hasAny(['imagePath']) || event.imagePath is string);
+    }
+
+    function validAdminStatusTransition() {
+      let currentStatus = resource.data.status;
+      let nextStatus = request.resource.data.status;
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && (
+          (currentStatus == 'pending' && nextStatus in ['approved', 'rejected', 'cancelled'])
+          || (currentStatus == 'rejected' && nextStatus in ['approved', 'cancelled'])
+          || (currentStatus == 'approved' && nextStatus == 'cancelled')
+        );
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
 
@@ -32,9 +81,27 @@ service cloud.firestore {
         && request.resource.data.email == request.auth.token.email;
 
       allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 1
+        && request.resource.data.displayName.size() <= 60
         && request.resource.data.role == resource.data.role;
 
       allow update: if isAdmin();
+
+      match /savedEvents/{eventId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasOnly(['eventId', 'createdAt'])
+          && request.resource.data.keys().hasAll(['eventId', 'createdAt'])
+          && request.resource.data.eventId == eventId
+          && request.resource.data.createdAt is timestamp
+          && exists(/databases/$(database)/documents/events/$(eventId))
+          && get(/databases/$(database)/documents/events/$(eventId)).data.status == 'approved'
+          && get(/databases/$(database)/documents/events/$(eventId)).data.startAt > request.time;
+        allow delete: if isOwner(userId);
+        allow update: if false;
+      }
     }
 
     match /events/{eventId} {
@@ -46,13 +113,44 @@ service cloud.firestore {
 
       allow create: if isHost()
         && request.resource.data.hostId == request.auth.uid
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status == 'pending'
+        && validEventPayload();
 
-      allow update, delete: if isSignedIn()
+      allow update: if isSignedIn()
+        && resource.data.hostId == request.auth.uid
+        && request.resource.data.hostId == resource.data.hostId
+        && (
+          (
+            resource.data.status in ['pending', 'rejected']
+            && request.resource.data.status == 'pending'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'title',
+              'description',
+              'category',
+              'location',
+              'geohash',
+              'startAt',
+              'endAt',
+              'capacity',
+              'ticketPrice',
+              'status',
+              'imageUrl',
+              'imagePath'
+            ])
+            && validEventPayload()
+          )
+          || (
+            resource.data.status in ['pending', 'rejected', 'approved']
+            && request.resource.data.status == 'cancelled'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          )
+        );
+
+      allow delete: if isSignedIn()
         && resource.data.hostId == request.auth.uid
         && resource.data.status in ['pending', 'rejected'];
 
-      allow update: if isAdmin();
+      allow update: if isAdmin() && validAdminStatusTransition();
     }
 
     match /rsvps/{rsvpId} {
@@ -61,11 +159,7 @@ service cloud.firestore {
         || isAdmin()
       );
 
-      allow create: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
-
-      allow update, delete: if isSignedIn()
-        && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if isAdmin();
     }
   }
 }

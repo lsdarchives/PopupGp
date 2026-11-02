@@ -9,13 +9,15 @@ import {
     orderBy,
     serverTimestamp,
     updateDoc,
+    deleteField,
     deleteDoc,
     limit,
   } from "firebase/firestore";
-  import { db } from "./firebase";
-  import type { Event, EventWithId, EventLocation } from "../types";
+  import { httpsCallable } from "firebase/functions";
+  import { db, functions } from "./firebase";
+  import type { EventWithId, EventLocation } from "../types";
   
-  function mapDocToEvent(id: string, data: any): EventWithId {
+  export function mapEventDocument(id: string, data: any): EventWithId {
     return {
       id,
       title: data.title,
@@ -29,6 +31,7 @@ import {
       endAt: data.endAt?.toDate?.() ?? new Date(),
       rsvpCount: data.rsvpCount ?? 0,
       imageUrl: data.imageUrl,
+      imagePath: data.imagePath,
       capacity: data.capacity,
       ticketPrice: data.ticketPrice,
     };
@@ -73,7 +76,7 @@ import {
     );
   
     const snap = await getDocs(q);
-    return snap.docs.map((d) => mapDocToEvent(d.id, d.data()));
+    return snap.docs.map((d) => mapEventDocument(d.id, d.data()));
   }
   
   export async function getApprovedEvents(): Promise<EventWithId[]> {
@@ -84,19 +87,21 @@ import {
     );
   
     const snap = await getDocs(q);
-    return snap.docs.map((d) => mapDocToEvent(d.id, d.data()));
+    return snap.docs.map((d) => mapEventDocument(d.id, d.data()));
   }
   
   export interface UserRsvpState {
     id: string;
     ticketPurchased: boolean;
+    paymentStatus?: "free" | "paid" | "pending" | "failed";
+    paymentIntentId?: string;
     status: "going" | "cancelled";
   }
 
   export async function getEvent(eventId: string): Promise<EventWithId | null> {
     const snap = await getDoc(doc(db, "events", eventId));
     if (!snap.exists()) return null;
-    return mapDocToEvent(snap.id, snap.data());
+    return mapEventDocument(snap.id, snap.data());
   }
 
   export async function getUserRsvpForEvent(eventId: string, userId: string): Promise<UserRsvpState | null> {
@@ -114,87 +119,19 @@ import {
     return {
       id: snap.docs[0].id,
       ticketPurchased: Boolean(docData.ticketPurchased),
+      paymentStatus: docData.paymentStatus,
+      paymentIntentId: docData.paymentIntentId,
       status: docData.status ?? "going",
     };
   }
 
-  export async function toggleRsvp(eventId: string, userId: string): Promise<{ isGoing: boolean }> {
-    const existing = await getUserRsvpForEvent(eventId, userId);
-    const eventRef = doc(db, "events", eventId);
-    const eventSnap = await getDoc(eventRef);
-
-    if (!eventSnap.exists()) {
-      throw new Error("Event not found");
-    }
-
-    const eventData = eventSnap.data();
-    const currentCount = Number(eventData.rsvpCount ?? 0);
-
-    if (existing) {
-      await deleteDoc(doc(db, "rsvps", existing.id));
-      await updateDoc(eventRef, {
-        rsvpCount: Math.max(0, currentCount - 1),
-      });
-      return { isGoing: false };
-    }
-
-    if (typeof eventData.capacity === "number" && currentCount >= eventData.capacity) {
-      throw new Error("This event is full.");
-    }
-
-    await addDoc(collection(db, "rsvps"), {
-      eventId,
-      userId,
-      status: "going",
-      ticketPurchased: false,
-      createdAt: serverTimestamp(),
-    });
-
-    await updateDoc(eventRef, {
-      rsvpCount: currentCount + 1,
-    });
-
-    return { isGoing: true };
-  }
-
-  export async function purchaseTicket(eventId: string, userId: string): Promise<{ hasTicket: boolean }> {
-    const existing = await getUserRsvpForEvent(eventId, userId);
-    const eventRef = doc(db, "events", eventId);
-    const eventSnap = await getDoc(eventRef);
-
-    if (!eventSnap.exists()) {
-      throw new Error("Event not found");
-    }
-
-    const eventData = eventSnap.data();
-    const currentCount = Number(eventData.rsvpCount ?? 0);
-
-    if (!existing) {
-      if (typeof eventData.capacity === "number" && currentCount >= eventData.capacity) {
-        throw new Error("This event is full.");
-      }
-
-      await addDoc(collection(db, "rsvps"), {
-        eventId,
-        userId,
-        status: "going",
-        ticketPurchased: true,
-        createdAt: serverTimestamp(),
-      });
-
-      await updateDoc(eventRef, {
-        rsvpCount: currentCount + 1,
-      });
-
-      return { hasTicket: true };
-    }
-
-    const rsvpRef = doc(db, "rsvps", existing.id);
-    await updateDoc(rsvpRef, {
-      ticketPurchased: !existing.ticketPurchased,
-    });
-
-    return { hasTicket: !existing.ticketPurchased };
+  export async function toggleRsvp(eventId: string): Promise<{ isGoing: boolean }> {
+    const toggleFreeRsvp = httpsCallable<{ eventId: string }, { isGoing: boolean }>(
+      functions,
+      "toggleFreeRsvp"
+    );
+    const result = await toggleFreeRsvp({ eventId });
+    return { isGoing: result.data.isGoing };
   }
 
   export interface EventUpdateInput {
@@ -207,6 +144,9 @@ import {
     endAt: Date;
     capacity?: number;
     ticketPrice?: number;
+  imageUrl?: string;
+  imagePath?: string;
+  clearImage?: boolean;
   }
 
   export async function updateEvent(eventId: string, data: EventUpdateInput): Promise<void> {
@@ -221,7 +161,20 @@ import {
       capacity: data.capacity ?? null,
       ticketPrice: data.ticketPrice ?? 0,
       status: "pending",
+      ...(data.clearImage ? { imageUrl: deleteField(), imagePath: deleteField() } : {}),
+      ...(data.imageUrl && data.imagePath
+        ? { imageUrl: data.imageUrl, imagePath: data.imagePath }
+        : {}),
     });
+  }
+
+  export async function updateEventImage(
+    eventId: string,
+    image?: { imageUrl: string; imagePath: string },
+  ): Promise<void> {
+    await updateDoc(doc(db, "events", eventId), image
+      ? { imageUrl: image.imageUrl, imagePath: image.imagePath }
+      : { imageUrl: deleteField(), imagePath: deleteField() });
   }
 
   export async function cancelEvent(eventId: string): Promise<void> {

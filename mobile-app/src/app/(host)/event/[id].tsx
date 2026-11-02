@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,7 +12,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAuth } from "../../../contexts/AuthContext";
 import { cancelEvent, deleteEvent, getEvent } from "../../../services/events";
 import { StatusBadge } from "../../../components/host/status-badge";
-import { Brand, Radius } from "../../../constants/brand";
+import { Brand, Radius, Typography } from "../../../constants/brand";
+import { Image } from "expo-image";
 import type { EventStatus, EventWithId } from "../../../types";
 
 function canManage(status: EventStatus) {
@@ -36,64 +36,35 @@ export default function EventDetail() {
   const [event, setEvent] = useState<EventWithId | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"cancel" | "delete" | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     getEvent(id)
-      .then(setEvent)
+      .then((item) => {
+        setEvent(item);
+        if (!item) setLoadError("This event is no longer available.");
+      })
+      .catch((error) => setLoadError(error instanceof Error ? error.message : "Could not load this event."))
       .finally(() => setLoading(false));
   }, [id]);
 
-  const handleCancel = () => {
-    if (!event) return;
-    Alert.alert(
-      "Cancel event?",
-      "This will mark the event as cancelled. You can create a new one anytime.",
-      [
-        { text: "Keep", style: "cancel" },
-        {
-          text: "Cancel Event",
-          style: "destructive",
-          onPress: async () => {
-            setActing(true);
-            try {
-              await cancelEvent(event.id);
-              router.replace("/(host)/my-events");
-            } catch (e: any) {
-              Alert.alert("Failed to cancel", e.message);
-            } finally {
-              setActing(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleDelete = () => {
-    if (!event) return;
-    Alert.alert(
-      "Delete event?",
-      "This permanently removes the event. This cannot be undone.",
-      [
-        { text: "Keep", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            setActing(true);
-            try {
-              await deleteEvent(event.id);
-              router.replace("/(host)/my-events");
-            } catch (e: any) {
-              Alert.alert("Failed to delete", e.message);
-            } finally {
-              setActing(false);
-            }
-          },
-        },
-      ]
-    );
+  const performConfirmedAction = async () => {
+    if (!event || !confirmAction) return;
+    setActing(true);
+    setActionError(null);
+    try {
+      if (confirmAction === "cancel") await cancelEvent(event.id);
+      else await deleteEvent(event.id);
+      router.replace("/(host)/my-events");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : `Could not ${confirmAction} this event.`);
+      setConfirmAction(null);
+    } finally {
+      setActing(false);
+    }
   };
 
   if (loading) {
@@ -107,7 +78,7 @@ export default function EventDetail() {
   if (!event) {
     return (
       <SafeAreaView style={styles.centered}>
-        <Text style={styles.errorText}>Event not found</Text>
+        <Text style={styles.errorText}>{loadError ?? "Event not found"}</Text>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backLink}>← Go back</Text>
         </TouchableOpacity>
@@ -118,7 +89,7 @@ export default function EventDetail() {
   if (user && event.hostId !== user.uid) {
     return (
       <SafeAreaView style={styles.centered}>
-        <Text style={styles.errorText}>You don't have access to this event</Text>
+        <Text style={styles.errorText}>You don&apos;t have access to this event</Text>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backLink}>← Go back</Text>
         </TouchableOpacity>
@@ -134,6 +105,10 @@ export default function EventDetail() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backLink}>← Back</Text>
         </TouchableOpacity>
+
+        {event.imageUrl ? (
+          <Image source={{ uri: event.imageUrl }} style={styles.heroImage} contentFit="cover" />
+        ) : null}
 
         <View style={styles.header}>
           <Text style={styles.title}>{event.title}</Text>
@@ -154,6 +129,30 @@ export default function EventDetail() {
             </Text>
           </View>
         )}
+
+        {confirmAction ? (
+          <View style={styles.confirmBox}>
+            <Text style={styles.confirmTitle}>
+              {confirmAction === "cancel" ? "Cancel this event?" : "Delete this event permanently?"}
+            </Text>
+            <Text style={styles.confirmCopy}>
+              {confirmAction === "cancel"
+                ? "Guests will see that this event is cancelled."
+                : "This removes the event and cannot be undone."}
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity style={styles.confirmKeep} onPress={() => setConfirmAction(null)} disabled={acting}>
+                <Text style={styles.confirmKeepText}>Keep event</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmDanger} onPress={performConfirmedAction} disabled={acting}>
+                <Text style={styles.confirmDangerText}>
+                  {acting ? "Working…" : confirmAction === "cancel" ? "Confirm cancel" : "Confirm delete"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+        {actionError ? <Text accessibilityRole="alert" style={styles.actionError}>{actionError}</Text> : null}
 
         <InfoCard label="Description">
           <Text style={styles.body}>{event.description}</Text>
@@ -204,13 +203,13 @@ export default function EventDetail() {
               <Text style={styles.primaryBtnText}>Edit Event</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.secondaryBtn} onPress={handleCancel} disabled={acting}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => { setActionError(null); setConfirmAction("cancel"); }} disabled={acting}>
               <Text style={styles.secondaryBtnText}>
                 {acting ? "Working..." : "Cancel Event"}
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.dangerBtn} onPress={handleDelete} disabled={acting}>
+            <TouchableOpacity style={styles.dangerBtn} onPress={() => { setActionError(null); setConfirmAction("delete"); }} disabled={acting}>
               <Text style={styles.dangerBtnText}>Delete Permanently</Text>
             </TouchableOpacity>
           </View>
@@ -221,7 +220,7 @@ export default function EventDetail() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Brand.white },
+  safe: { flex: 1, backgroundColor: Brand.bg },
   content: { padding: 24, paddingBottom: 40 },
   centered: {
     flex: 1,
@@ -239,7 +238,8 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 6,
   },
-  title: { fontSize: 26, fontWeight: "800", color: Brand.dark, flex: 1, lineHeight: 32 },
+  title: { fontFamily: Typography.heading, fontSize: 26, fontWeight: "800", color: Brand.dark, flex: 1, lineHeight: 32 },
+  heroImage: { width: "100%", height: 210, borderRadius: Radius.lg, marginBottom: 18, backgroundColor: Brand.redLight },
   category: {
     color: Brand.grey,
     fontSize: 14,
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
   bannerText: { color: "#B8860B", fontSize: 13, fontWeight: "600", textAlign: "center" },
   bannerTextRejected: { color: Brand.red, fontSize: 13, fontWeight: "600", textAlign: "center" },
   infoCard: {
-    backgroundColor: Brand.bg,
+    backgroundColor: Brand.white,
     borderRadius: Radius.md,
     padding: 16,
     marginBottom: 12,
@@ -291,5 +291,14 @@ const styles = StyleSheet.create({
   secondaryBtnText: { color: Brand.red, fontWeight: "600", fontSize: 15 },
   dangerBtn: { padding: 14, alignItems: "center" },
   dangerBtnText: { color: "#D9453D", fontWeight: "600", fontSize: 14 },
+  confirmBox: { backgroundColor: Brand.white, borderRadius: Radius.md, padding: 16, borderWidth: 1, borderColor: Brand.greyLight, marginBottom: 14 },
+  confirmTitle: { color: Brand.dark, fontFamily: Typography.heading, fontSize: 16, fontWeight: "800" },
+  confirmCopy: { color: Brand.greyMid, fontSize: 13, lineHeight: 19, marginTop: 5 },
+  confirmActions: { flexDirection: "row", gap: 10, marginTop: 13 },
+  confirmKeep: { flex: 1, padding: 11, borderRadius: Radius.sm, alignItems: "center", borderWidth: 1, borderColor: Brand.greyLight },
+  confirmKeepText: { color: Brand.dark, fontWeight: "700", fontSize: 12 },
+  confirmDanger: { flex: 1, padding: 11, borderRadius: Radius.sm, alignItems: "center", backgroundColor: "#A52A2A" },
+  confirmDangerText: { color: Brand.white, fontWeight: "700", fontSize: 12 },
+  actionError: { color: "#8F1020", backgroundColor: Brand.redLight, padding: 12, borderRadius: Radius.sm, marginBottom: 12, fontSize: 13 },
   errorText: { fontSize: 16, color: Brand.grey, marginBottom: 12 },
 });

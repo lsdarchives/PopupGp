@@ -25,6 +25,12 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Event venue locations
+
+Hosts enter a venue name or address and use **Find venue** to set its map location; latitude and longitude remain internal data for maps and nearby-event search. Native apps use the platform geocoder. Web uses a user-triggered OpenStreetMap Nominatim lookup, with attribution shown in the form. Keep lookups user initiated, respect the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/), and use a replaceable or self-hosted provider if traffic grows.
+
+Host accounts land on a dashboard with event and RSVP summaries. The host navigation stays visible at the bottom and links to Dashboard, My Events, Create Event, and Profile.
+
 ## Get a fresh project
 
 When you're ready, run:

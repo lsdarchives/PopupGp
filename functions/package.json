@@ -1,0 +1,23 @@
+{
+  "name": "popupgp-functions",
+  "private": true,
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "deploy": "npm run build && firebase deploy --only functions",
+    "serve": "npm run build && node scripts/serve-emulators.cjs",
+    "test:emulators": "node scripts/run-emulator-tests.cjs",
+    "promote-admin": "node scripts/promote-admin.cjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.3.0",
+    "stripe": "^17.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": "20"
+  }
+}

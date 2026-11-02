@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -24,35 +25,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const loadProfile = async (uid: string) => {
-    const userProfile = await getUserProfile(uid);
-    setProfile(userProfile);
-  };
+  const profileRequestId = useRef(0);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+      const requestId = ++profileRequestId.current;
       setUser(firebaseUser);
 
-      if (firebaseUser) {
-        await loadProfile(firebaseUser.uid);
-      } else {
+      if (!firebaseUser) {
         setProfile(null);
+        setLoading(false);
+        return;
       }
 
-      setLoading(false);
+      setProfile(null);
+      setLoading(true);
+      void getUserProfile(firebaseUser.uid)
+        .then((userProfile) => {
+          if (requestId === profileRequestId.current) {
+            setProfile(userProfile);
+          }
+        })
+        .catch((error) => {
+          if (requestId !== profileRequestId.current) return;
+          console.error("Unable to load the signed-in user's profile.", error);
+          setProfile(null);
+        })
+        .finally(() => {
+          if (requestId === profileRequestId.current) {
+            setLoading(false);
+          }
+        });
     });
 
-    return () => unsub();
+    return () => {
+      profileRequestId.current += 1;
+      unsub();
+    };
   }, []);
 
   const logout = async () => {
     await signOut(auth);
-    setProfile(null);
   };
 
   const refreshProfile = async () => {
-    if (user) await loadProfile(user.uid);
+    if (!user) return;
+
+    const refreshedProfile = await getUserProfile(user.uid);
+    if (auth.currentUser?.uid === user.uid) {
+      setProfile(refreshedProfile);
+    }
   };
 
   return (

@@ -15,9 +15,32 @@ npm run dev
 - Firebase Auth sign-in for admin users
 - Live Firestore queue for submitted events
 - Approve, reject, or cancel event requests
-- Dashboard, analytics, and profile views
+- Overview dashboard, event analytics, and profile views
+- Admin sign-in and dashboard styled for desktop and mobile
+- Download an all-events CSV report from the analytics view
 
 ## Admin setup
+
+Preferred: create or promote an admin with the script in `functions` (uses Firebase Admin SDK).
+
+**Production** (same live project as `VITE_USE_FIREBASE_EMULATORS=false`):
+
+```bash
+cd ../functions
+# Use a service account JSON, or: gcloud auth application-default login
+npm run promote-admin -- --email you@example.com --password 'your-password'
+```
+
+**Emulator** (Auth + Firestore emulators must already be running):
+
+```bash
+cd ../functions
+npm run promote-admin -- --emulator --email you@example.com --password 'your-password'
+```
+
+Then sign in to this console with that email and password. Confirm mobile and admin share the same Firebase project / emulator flags in their `.env.local` files.
+
+Manual Console alternative:
 
 1. Register a normal account in the mobile app or Firebase Auth
 2. Create the matching Firestore `users/{uid}` document
@@ -28,4 +51,5 @@ npm run dev
 
 - The app reads from the same Firebase project as the mobile app
 - Event moderation follows the Firestore security rules in `firebase/firestore.rules`
-- If the console says access is denied, check the Firebase Auth account and `users/{uid}.role`
+- CSV reports contain event IDs, status, category, venue, dates, RSVP counts, capacity, and ticket price; they do not include host account identifiers
+- If sign-in fails, check the on-screen message: wrong password vs missing profile vs `users/{uid}.role` not `admin`. Fix with `npm run promote-admin` in `functions`.

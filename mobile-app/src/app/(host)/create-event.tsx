@@ -5,20 +5,41 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   Platform,
   KeyboardAvoidingView,
+  StyleSheet,
 } from "react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import type { ImagePickerAsset } from "expo-image-picker";
 import { useAuth } from "../../contexts/AuthContext";
-import { createEvent } from "../../services/events";
-import { getGeohash } from "../../utils/geohash";
+import { createEvent, updateEventImage } from "../../services/events";
+import { deleteEventImage, uploadEventImage } from "../../services/event-images";
+import { EVENT_CATEGORIES, validateEventForm } from "../../utils/event-form";
 import { HostScreenHeader, hostFormStyles as s } from "../../components/host/screen-header";
-import { Brand } from "../../constants/brand";
+import { Brand, Radius, Typography } from "../../constants/brand";
+import { EventImageField } from "../../components/host/event-image-field";
+import { EventDateTimeField } from "../../components/host/event-date-time-field";
+import { EventLocationField } from "../../components/host/event-location-field";
 
-const CATEGORIES = ["music", "food", "sports", "arts", "markets", "nightlife", "other"];
+const getSuggestedEventDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  date.setHours(18, 0, 0, 0);
+  return date;
+};
+
+interface CreatedEventReceipt {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  address: string;
+  startAt: Date;
+  capacity?: number;
+  ticketPrice: number;
+}
 
 export default function CreateEvent() {
   const router = useRouter();
@@ -30,89 +51,171 @@ export default function CreateEvent() {
   const [address, setAddress] = useState("");
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
-  const [startAt, setStartAt] = useState(new Date());
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState<"date" | "time">("date");
+  const [startAt, setStartAt] = useState(getSuggestedEventDate);
   const [capacity, setCapacity] = useState("");
   const [ticketPrice, setTicketPrice] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const openPicker = (mode: "date" | "time") => {
-    setPickerMode(mode);
-    setShowPicker(true);
-  };
-
-  const onPickerChange = (_: any, selected?: Date) => {
-    setShowPicker(Platform.OS === "ios");
-    if (selected) {
-      const updated = new Date(startAt);
-      if (pickerMode === "date") {
-        updated.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
-      } else {
-        updated.setHours(selected.getHours(), selected.getMinutes());
-      }
-      setStartAt(updated);
-    }
-  };
+  const [formError, setFormError] = useState<string | null>(null);
+  const [imageUploadWarning, setImageUploadWarning] = useState<string | null>(null);
+  const [createdEvent, setCreatedEvent] = useState<CreatedEventReceipt | null>(null);
+  const [imageAsset, setImageAsset] = useState<ImagePickerAsset | null>(null);
 
   const handleCreate = async () => {
-    if (!user) return Alert.alert("You must be logged in");
-    if (!title || !description || !address || !lat || !lng) {
-      return Alert.alert("Please fill in all required fields");
+    if (!user) {
+      setFormError("Sign in again before creating an event.");
+      return;
     }
-
-    const latNum = parseFloat(lat);
-    const lngNum = parseFloat(lng);
-    if (isNaN(latNum) || isNaN(lngNum)) {
-      return Alert.alert("Latitude and longitude must be numbers");
+    const validation = validateEventForm({
+      title,
+      description,
+      category,
+      address,
+      latitude: lat,
+      longitude: lng,
+      startAt,
+      capacity,
+      ticketPrice,
+    });
+    if ("error" in validation) {
+      setFormError(validation.error);
+      return;
     }
-
-    const endAt = new Date(startAt.getTime() + 3 * 60 * 60 * 1000);
+    setFormError(null);
+    setImageUploadWarning(null);
 
     setLoading(true);
     try {
-      await createEvent(
+      const event = validation.value;
+      const eventId = await createEvent(
         user.uid,
-        title,
-        description,
-        category,
-        { lat: latNum, lng: lngNum, address },
-        getGeohash(latNum, lngNum),
-        startAt,
-        endAt,
-        capacity ? parseInt(capacity, 10) : undefined,
-        ticketPrice ? parseFloat(ticketPrice) : undefined
+        event.title,
+        event.description,
+        event.category,
+        event.location,
+        event.geohash,
+        event.startAt,
+        event.endAt,
+        event.capacity,
+        event.ticketPrice,
       );
-      Alert.alert("Event created!", "Your event is pending admin approval.");
-      router.replace("/(host)/my-events");
-    } catch (e: any) {
-      Alert.alert("Failed to create event", e.message);
+      const receipt: CreatedEventReceipt = {
+        id: eventId,
+        title: event.title,
+        description: event.description,
+        category: event.category,
+        address: event.location.address,
+        startAt: event.startAt,
+        capacity: event.capacity,
+        ticketPrice: event.ticketPrice,
+      };
+      if (imageAsset) {
+        try {
+          const uploaded = await uploadEventImage(user.uid, eventId, imageAsset);
+          try {
+            await updateEventImage(eventId, uploaded);
+          } catch (error) {
+            await deleteEventImage(uploaded.imagePath).catch(() => undefined);
+            throw error;
+          }
+        } catch (error) {
+          setImageUploadWarning(
+            `${error instanceof Error ? error.message : "The image could not be uploaded."} The event was created, but it is still pending approval. You can add the image later from the event editor.`
+          );
+          setCreatedEvent(receipt);
+          return;
+        }
+      }
+      setCreatedEvent(receipt);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Could not create the event. Try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: Brand.white }} edges={["top", "left", "right"]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: Brand.bg }} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
-          contentContainerStyle={{ padding: 24 }}
+          contentContainerStyle={{ padding: 24, flexGrow: 1, backgroundColor: Brand.bg }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           <HostScreenHeader
-            title="Create Event"
-            subtitle="Where the city comes alive"
-            showBack
+            title={createdEvent ? "Event Created" : "Create Event"}
+            subtitle={createdEvent ? "Your event has been submitted" : "Where the city comes alive"}
+            showBack={!createdEvent}
           />
 
+          {createdEvent ? (
+            <View style={styles.receipt}>
+              <View style={styles.receiptHeading}>
+                <MaterialCommunityIcons name="check-circle" size={30} color="#217A50" />
+                <View style={styles.receiptHeadingCopy}>
+                  <Text style={styles.receiptTitle}>Your event is created</Text>
+                  <Text style={styles.receiptSubtitle}>It is now waiting for admin approval.</Text>
+                </View>
+              </View>
+
+              {imageUploadWarning ? (
+                <Text accessibilityRole="alert" style={s.error}>{imageUploadWarning}</Text>
+              ) : null}
+
+              <View style={styles.eventDetails}>
+                <Text style={styles.eventTitle}>{createdEvent.title}</Text>
+                <Text style={styles.eventCategory}>{createdEvent.category}</Text>
+                <Text style={styles.eventDescription}>{createdEvent.description}</Text>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Venue</Text>
+                  <Text style={styles.detailValue}>{createdEvent.address}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Date & time</Text>
+                  <Text style={styles.detailValue}>{createdEvent.startAt.toLocaleString()}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Capacity</Text>
+                  <Text style={styles.detailValue}>{createdEvent.capacity ?? "Not specified"}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Ticket price</Text>
+                  <Text style={styles.detailValue}>R {createdEvent.ticketPrice.toFixed(2)}</Text>
+                </View>
+                <View style={styles.statusRow}>
+                  <Text style={styles.detailLabel}>Status</Text>
+                  <Text style={styles.statusValue}>Pending approval</Text>
+                </View>
+                <View style={styles.eventIdBlock}>
+                  <Text style={styles.detailLabel}>Event ID</Text>
+                  <Text selectable style={styles.eventId}>{createdEvent.id}</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => router.replace("/(host)/my-events")}
+                style={styles.primaryAction}
+                accessibilityRole="button"
+              >
+                <Text style={styles.primaryActionText}>Go to My Events</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.replace("/(host)/dashboard")}
+                style={styles.secondaryAction}
+                accessibilityRole="button"
+              >
+                <Text style={styles.secondaryActionText}>Go to Dashboard</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {!createdEvent ? <>
           <Text style={s.label}>Title *</Text>
           <TextInput
             placeholder="e.g. Sunset Rooftop Jazz Night"
-            placeholderTextColor="#aaa"
+            placeholderTextColor={Brand.grey}
             value={title}
             onChangeText={setTitle}
             style={s.input}
@@ -121,7 +224,7 @@ export default function CreateEvent() {
           <Text style={s.label}>Description *</Text>
           <TextInput
             placeholder="What's happening, who's it for, what to expect..."
-            placeholderTextColor="#aaa"
+            placeholderTextColor={Brand.grey}
             value={description}
             onChangeText={setDescription}
             multiline
@@ -131,7 +234,7 @@ export default function CreateEvent() {
 
           <Text style={s.label}>Category *</Text>
           <View style={s.categoryRow}>
-            {CATEGORIES.map((c) => (
+            {EVENT_CATEGORIES.map((c) => (
               <TouchableOpacity
                 key={c}
                 style={[s.categoryChip, category === c && s.categoryChipActive]}
@@ -142,78 +245,23 @@ export default function CreateEvent() {
             ))}
           </View>
 
-          <Text style={s.label}>Address *</Text>
-          <TextInput
-            placeholder="e.g. 44 Stanley Ave, Milpark, Johannesburg"
-            placeholderTextColor="#aaa"
-            value={address}
-            onChangeText={setAddress}
-            style={s.input}
+          <EventLocationField
+            address={address}
+            onAddressChange={(value) => {
+              setAddress(value);
+              setLat("");
+              setLng("");
+            }}
+            onLatitudeChange={setLat}
+            onLongitudeChange={setLng}
           />
 
-          <Text style={s.label}>Coordinates *</Text>
-          <View style={s.row}>
-            <TextInput
-              placeholder="Latitude e.g. -26.2041"
-              placeholderTextColor="#aaa"
-              value={lat}
-              onChangeText={setLat}
-              keyboardType="numeric"
-              style={[s.input, { flex: 1, marginRight: 8 }]}
-            />
-            <TextInput
-              placeholder="Longitude e.g. 28.0473"
-              placeholderTextColor="#aaa"
-              value={lng}
-              onChangeText={setLng}
-              keyboardType="numeric"
-              style={[s.input, { flex: 1 }]}
-            />
-          </View>
-          <Text style={s.hint}>
-            Tip: open Google Maps, long-press a location, and copy the coordinates shown.
-          </Text>
-
-          <Text style={s.label}>Start date & time *</Text>
-          <View style={s.row}>
-            <TouchableOpacity
-              style={[s.pickerBtn, { flex: 1, marginRight: 8 }]}
-              onPress={() => openPicker("date")}
-            >
-              <Text style={s.pickerBtnText}>
-                📅{" "}
-                {startAt.toLocaleDateString("en-ZA", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                })}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.pickerBtn, { flex: 1 }]}
-              onPress={() => openPicker("time")}
-            >
-              <Text style={s.pickerBtnText}>
-                🕐 {startAt.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {showPicker && (
-            <DateTimePicker
-              value={startAt}
-              mode={pickerMode}
-              is24Hour
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              onChange={onPickerChange}
-            />
-          )}
-
+          <EventDateTimeField value={startAt} onChange={setStartAt} />
           <Text style={s.label}>Capacity & ticket price (optional)</Text>
           <View style={s.row}>
             <TextInput
               placeholder="Max attendees"
-              placeholderTextColor="#aaa"
+              placeholderTextColor={Brand.grey}
               value={capacity}
               onChangeText={setCapacity}
               keyboardType="numeric"
@@ -221,7 +269,7 @@ export default function CreateEvent() {
             />
             <TextInput
               placeholder="Price (ZAR)"
-              placeholderTextColor="#aaa"
+              placeholderTextColor={Brand.grey}
               value={ticketPrice}
               onChangeText={setTicketPrice}
               keyboardType="numeric"
@@ -229,15 +277,55 @@ export default function CreateEvent() {
             />
           </View>
 
+          <EventImageField
+            imageUri={imageAsset?.uri}
+            onSelect={setImageAsset}
+            onRemove={() => setImageAsset(null)}
+          />
+
+          {formError ? <Text accessibilityRole="alert" style={s.error}>{formError}</Text> : null}
+
           <TouchableOpacity
             style={[s.button, loading && { opacity: 0.7 }]}
             onPress={handleCreate}
             disabled={loading}
           >
-            <Text style={s.buttonText}>{loading ? "Creating..." : "Create Event"}</Text>
+            <Text style={s.buttonText}>
+              {loading ? "Creating..." : "Create Event"}
+            </Text>
           </TouchableOpacity>
+          </> : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  receipt: {
+    padding: 20,
+    borderWidth: 1,
+    borderColor: Brand.greyLight,
+    borderRadius: Radius.lg,
+    backgroundColor: Brand.white,
+  },
+  receiptHeading: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 18 },
+  receiptHeadingCopy: { flex: 1 },
+  receiptTitle: { color: Brand.dark, fontFamily: Typography.heading, fontSize: 18, fontWeight: "800" },
+  receiptSubtitle: { color: Brand.greyMid, fontFamily: Typography.body, fontSize: 13, lineHeight: 19, marginTop: 3 },
+  eventDetails: { padding: 16, borderRadius: Radius.md, backgroundColor: Brand.bg },
+  eventTitle: { color: Brand.dark, fontFamily: Typography.heading, fontSize: 20, fontWeight: "800" },
+  eventCategory: { color: Brand.red, fontFamily: Typography.body, fontSize: 12, fontWeight: "700", textTransform: "capitalize", marginTop: 4 },
+  eventDescription: { color: Brand.greyMid, fontFamily: Typography.body, fontSize: 13, lineHeight: 19, marginTop: 10, marginBottom: 6 },
+  detailRow: { flexDirection: "row", justifyContent: "space-between", gap: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: Brand.greyLight },
+  detailLabel: { color: Brand.greyMid, fontFamily: Typography.body, fontSize: 12, fontWeight: "600" },
+  detailValue: { flex: 1, color: Brand.dark, fontFamily: Typography.body, fontSize: 12, textAlign: "right" },
+  statusRow: { flexDirection: "row", justifyContent: "space-between", gap: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: Brand.greyLight },
+  statusValue: { color: "#865700", fontFamily: Typography.body, fontSize: 12, fontWeight: "700" },
+  eventIdBlock: { paddingTop: 10, borderTopWidth: 1, borderTopColor: Brand.greyLight },
+  eventId: { color: Brand.dark, fontFamily: Typography.body, fontSize: 12, marginTop: 5 },
+  primaryAction: { minHeight: 50, alignItems: "center", justifyContent: "center", marginTop: 18, borderRadius: Radius.md, backgroundColor: Brand.red },
+  primaryActionText: { color: Brand.white, fontFamily: Typography.body, fontSize: 14, fontWeight: "700" },
+  secondaryAction: { minHeight: 48, alignItems: "center", justifyContent: "center", marginTop: 8, borderRadius: Radius.md, borderWidth: 1, borderColor: Brand.greyLight },
+  secondaryActionText: { color: Brand.dark, fontFamily: Typography.body, fontSize: 14, fontWeight: "600" },
+});
