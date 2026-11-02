@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-import { Brand, Radius } from "../../constants/brand";
+import { Brand, Radius, Typography } from "../../constants/brand";
 
 type Props = {
   title: string;
@@ -28,12 +28,13 @@ const styles = StyleSheet.create({
   wrap: { marginBottom: 20 },
   backBtn: { marginBottom: 12 },
   backText: { color: Brand.red, fontSize: 14, fontWeight: "600" },
-  title: { fontSize: 28, fontWeight: "800", color: Brand.red },
-  subtitle: { fontSize: 13, color: Brand.grey, marginTop: 4, letterSpacing: 0.3 },
+  title: { fontFamily: Typography.heading, fontSize: 28, fontWeight: "800", color: Brand.dark },
+  subtitle: { fontFamily: Typography.body, fontSize: 13, color: Brand.grey, marginTop: 4, letterSpacing: 0.3 },
 });
 
 export const hostFormStyles = StyleSheet.create({
   label: {
+    fontFamily: Typography.body,
     fontSize: 13,
     fontWeight: "600",
     color: Brand.dark,
@@ -41,7 +42,28 @@ export const hostFormStyles = StyleSheet.create({
     marginTop: 4,
   },
   hint: { fontSize: 12, color: Brand.grey, marginTop: -4, marginBottom: 12 },
+  error: {
+    color: Brand.red,
+    backgroundColor: Brand.redLight,
+    borderRadius: Radius.sm,
+    padding: 12,
+    marginBottom: 12,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  successBox: {
+    backgroundColor: "#E9F4EE",
+    borderColor: "#217A50",
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: 14,
+    marginBottom: 16,
+  },
+  successText: { color: "#185C3B", fontSize: 13, lineHeight: 19 },
+  successAction: { alignSelf: "flex-start", marginTop: 8 },
+  successActionText: { color: "#185C3B", fontSize: 13, fontWeight: "700" },
   input: {
+    fontFamily: Typography.body,
     borderWidth: 1.5,
     borderColor: Brand.greyLight,
     borderRadius: Radius.md,
@@ -49,7 +71,7 @@ export const hostFormStyles = StyleSheet.create({
     marginBottom: 12,
     fontSize: 15,
     color: Brand.dark,
-    backgroundColor: Brand.bg,
+    backgroundColor: Brand.white,
   },
   row: { flexDirection: "row" },
   categoryRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },

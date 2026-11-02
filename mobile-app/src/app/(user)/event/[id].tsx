@@ -6,15 +6,18 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAuth } from "../../../contexts/AuthContext";
-import { getEvent, getUserRsvpForEvent, purchaseTicket, toggleRsvp } from "../../../services/events";
+import { getEvent, getUserRsvpForEvent, toggleRsvp } from "../../../services/events";
+import { startTicketCheckout } from "../../../services/payments";
 import { StatusBadge } from "../../../components/host/status-badge";
-import { Brand, Radius } from "../../../constants/brand";
+import { Brand, Radius, Typography } from "../../../constants/brand";
 import type { EventWithId } from "../../../types";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { useSavedEvents } from "../../../hooks/use-saved-events";
 
 function InfoCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -29,30 +32,64 @@ export default function EventDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const {
+    savedEventIds,
+    loadingSavedEvents,
+    savingEventId,
+    savedEventsError,
+    toggleSavedEvent,
+  } = useSavedEvents(user?.uid);
   const [event, setEvent] = useState<EventWithId | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [isGoing, setIsGoing] = useState(false);
   const [hasTicket, setHasTicket] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const isPaidEvent = Boolean(event?.ticketPrice && event.ticketPrice > 0);
 
   useEffect(() => {
-    if (!id) return;
+    let active = true;
 
     const loadEvent = async () => {
-      const loadedEvent = await getEvent(id);
-      setEvent(loadedEvent);
+      setLoading(true);
+      setLoadError(null);
+      setActionMessage(null);
 
-      if (user && loadedEvent) {
-        const rsvp = await getUserRsvpForEvent(id, user.uid);
-        setIsGoing(Boolean(rsvp));
-        setHasTicket(Boolean(rsvp?.ticketPurchased));
-      } else {
-        setIsGoing(false);
-        setHasTicket(false);
+      try {
+        if (!id) {
+          throw new Error("This event link is missing its event ID.");
+        }
+
+        const loadedEvent = await getEvent(id);
+        if (!active) return;
+        setEvent(loadedEvent);
+
+        if (user && loadedEvent) {
+          const rsvp = await getUserRsvpForEvent(id, user.uid);
+          if (!active) return;
+          setIsGoing(Boolean(rsvp));
+          setHasTicket(Boolean(rsvp?.ticketPurchased));
+        } else {
+          setIsGoing(false);
+          setHasTicket(false);
+        }
+      } catch (error) {
+        if (active) {
+          setLoadError(
+            error instanceof Error ? error.message : "Could not load this event."
+          );
+        }
+      } finally {
+        if (active) setLoading(false);
       }
     };
 
-    loadEvent().finally(() => setLoading(false));
+    void loadEvent();
+    return () => {
+      active = false;
+    };
   }, [id, user]);
 
   if (loading) {
@@ -66,7 +103,7 @@ export default function EventDetail() {
   if (!event) {
     return (
       <SafeAreaView style={styles.centered}>
-        <Text style={styles.errorText}>Event not found</Text>
+        <Text style={styles.errorText}>{loadError ?? "Event not found"}</Text>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backLink}>← Go back</Text>
         </TouchableOpacity>
@@ -76,40 +113,85 @@ export default function EventDetail() {
 
   const handleRsvp = async () => {
     if (!event || !user) {
-      Alert.alert("Sign in required", "Please sign in to RSVP for this event.");
+      setActionMessage("Please sign in to RSVP for this event.");
       return;
     }
 
     setActing(true);
+    setActionMessage(null);
     try {
-      const result = await toggleRsvp(event.id, user.uid);
+      const result = await toggleRsvp(event.id);
       setIsGoing(result.isGoing);
-      const refreshed = await getEvent(event.id);
-      setEvent(refreshed);
-      Alert.alert(result.isGoing ? "RSVP saved" : "RSVP removed", result.isGoing ? "You’re on the guest list." : "Your RSVP has been removed.");
-    } catch (error: any) {
-      Alert.alert("Unable to update RSVP", error.message);
+      setActionMessage(
+        result.isGoing ? "You’re on the guest list." : "Your RSVP has been removed."
+      );
+      try {
+        const refreshed = await getEvent(event.id);
+        setEvent(refreshed);
+      } catch (error) {
+        console.error("RSVP changed, but the event count could not be refreshed.", error);
+      }
+    } catch (error) {
+      setActionMessage(
+        error instanceof Error ? error.message : "Unable to update your RSVP."
+      );
     } finally {
       setActing(false);
     }
   };
 
-  const handlePurchase = async () => {
+  const handleSaveEvent = async () => {
     if (!event || !user) {
-      Alert.alert("Sign in required", "Please sign in to reserve a ticket.");
+      setSavedMessage("Sign in to save events.");
+      return;
+    }
+    try {
+      const saved = await toggleSavedEvent(event.id);
+      setSavedMessage(saved ? "Event saved." : "Event removed from saved events.");
+    } catch (error) {
+      setSavedMessage(error instanceof Error ? error.message : "Could not update saved events.");
+    }
+  };
+
+  const handleTicketAction = async () => {
+    if (!event || !user) {
+      setActionMessage("Please sign in to reserve a ticket.");
+      return;
+    }
+
+    if (!isPaidEvent) {
+      await handleRsvp();
+      return;
+    }
+
+    if (hasTicket) {
+      setActionMessage("Your paid ticket is already confirmed for this event.");
       return;
     }
 
     setActing(true);
+    setActionMessage(null);
     try {
-      const result = await purchaseTicket(event.id, user.uid);
-      setHasTicket(result.hasTicket);
+      const result = await startTicketCheckout(event.id);
+      if (!result.hasTicket) {
+        throw new Error(
+          "Payment completed, but ticket confirmation did not succeed. Please contact support before trying again."
+        );
+      }
+
+      setHasTicket(true);
       setIsGoing(true);
-      const refreshed = await getEvent(event.id);
-      setEvent(refreshed);
-      Alert.alert(result.hasTicket ? "Ticket reserved" : "Ticket removed", result.hasTicket ? "Your ticket reservation is saved." : "Your reservation has been removed.");
-    } catch (error: any) {
-      Alert.alert("Unable to reserve ticket", error.message);
+      setActionMessage("Payment confirmed. Your ticket is saved.");
+      try {
+        const refreshed = await getEvent(event.id);
+        setEvent(refreshed);
+      } catch (error) {
+        console.error("Ticket confirmed, but the event count could not be refreshed.", error);
+      }
+    } catch (error) {
+      setActionMessage(
+        error instanceof Error ? error.message : "Unable to complete ticket checkout."
+      );
     } finally {
       setActing(false);
     }
@@ -121,6 +203,10 @@ export default function EventDetail() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backLink}>← Back</Text>
         </TouchableOpacity>
+
+        {event.imageUrl ? (
+          <Image source={{ uri: event.imageUrl }} style={styles.heroImage} contentFit="cover" />
+        ) : null}
 
         <View style={styles.header}>
           <Text style={styles.title}>{event.title}</Text>
@@ -167,25 +253,64 @@ export default function EventDetail() {
         )}
 
         <View style={styles.actions}>
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={handleSaveEvent}
+            disabled={loadingSavedEvents || savingEventId === event.id}
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons
+              name={savedEventIds.has(event.id) ? "bookmark" : "bookmark-outline"}
+              size={20}
+              color={Brand.red}
+            />
+            <Text style={styles.secondaryBtnText}>
+              {savingEventId === event.id
+                ? "Saving..."
+                : savedEventIds.has(event.id)
+                  ? "Remove from saved events"
+                  : "Save event"}
+            </Text>
+          </TouchableOpacity>
+          {savedMessage || savedEventsError ? (
+            <Text style={styles.actionMessage} accessibilityLiveRegion="polite" accessibilityRole="alert">
+              {savedMessage ?? savedEventsError}
+            </Text>
+          ) : null}
           <View style={styles.statusBox}>
             <Text style={styles.statusText}>
               {isGoing
                 ? hasTicket
-                  ? "You have a ticket reservation for this event."
+                  ? "You have a confirmed ticket for this event."
                   : "You’re on the guest list for this event."
-                : "Tap RSVP to join this event."}
+                : isPaidEvent
+                  ? "Buy a ticket to join this event."
+                  : "Tap RSVP to join this event."}
             </Text>
             <Text style={styles.meta}>Guests: {event.rsvpCount}</Text>
           </View>
 
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleRsvp} disabled={acting}>
-            <Text style={styles.primaryBtnText}>{acting ? "Working..." : isGoing ? "Cancel RSVP" : "RSVP"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={handlePurchase} disabled={acting}>
-            <Text style={styles.secondaryBtnText}>
-              {acting ? "Working..." : hasTicket ? "Remove Ticket" : event.ticketPrice && event.ticketPrice > 0 ? "Buy Ticket" : "Reserve Spot"}
+          {actionMessage ? (
+            <Text
+              style={styles.actionMessage}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+            >
+              {actionMessage}
             </Text>
-          </TouchableOpacity>
+          ) : null}
+
+          {isPaidEvent ? (
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleTicketAction} disabled={acting || hasTicket}>
+              <Text style={styles.primaryBtnText}>
+                {acting ? "Opening checkout..." : hasTicket ? "Ticket Purchased" : `Buy Ticket - R${event.ticketPrice}`}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleRsvp} disabled={acting}>
+              <Text style={styles.primaryBtnText}>{acting ? "Working..." : isGoing ? "Cancel RSVP" : "RSVP"}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -193,7 +318,7 @@ export default function EventDetail() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Brand.white },
+  safe: { flex: 1, backgroundColor: Brand.bg },
   content: { padding: 24, paddingBottom: 40 },
   centered: {
     flex: 1,
@@ -211,7 +336,8 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 6,
   },
-  title: { fontSize: 26, fontWeight: "800", color: Brand.dark, flex: 1, lineHeight: 32 },
+  title: { fontFamily: Typography.heading, fontSize: 26, fontWeight: "800", color: Brand.dark, flex: 1, lineHeight: 32 },
+  heroImage: { width: "100%", height: 210, borderRadius: Radius.lg, marginBottom: 18, backgroundColor: Brand.redLight },
   category: {
     color: Brand.grey,
     fontSize: 14,
@@ -219,7 +345,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   infoCard: {
-    backgroundColor: Brand.bg,
+    backgroundColor: Brand.white,
     borderRadius: Radius.md,
     padding: 16,
     marginBottom: 12,
@@ -245,6 +371,7 @@ const styles = StyleSheet.create({
     borderColor: Brand.greyLight,
   },
   statusText: { fontSize: 14, color: Brand.dark, lineHeight: 20 },
+  actionMessage: { fontSize: 14, color: Brand.dark, lineHeight: 20 },
   primaryBtn: {
     backgroundColor: Brand.red,
     padding: 16,
@@ -253,6 +380,8 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { color: Brand.white, fontWeight: "700", fontSize: 15 },
   secondaryBtn: {
+    flexDirection: "row",
+    gap: 8,
     borderWidth: 2,
     borderColor: Brand.red,
     padding: 14,

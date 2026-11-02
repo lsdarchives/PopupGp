@@ -1,0 +1,12 @@
+{
+  "name": "popupgp-presentation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node generate-deck.mjs",
+    "build:5min": "node generate-5-minute-deck.mjs"
+  },
+  "dependencies": {
+    "pptxgenjs": "4.0.1"
+  }
+}

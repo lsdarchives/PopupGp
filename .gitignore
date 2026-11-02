@@ -1,0 +1,7 @@
+/presentation/node_modules/
+/firebase-debug.log
+/firestore-debug.log
+/functions/firestore-debug.log
+/replay_pid*.log
+/presentation/~$*
+/.firebase-emulator-data/
